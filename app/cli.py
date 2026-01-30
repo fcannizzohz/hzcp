@@ -45,6 +45,8 @@ def _cmd_report(args: argparse.Namespace) -> int:
         in_dir=in_dir,
         out_dir=out_dir,
         output_name=args.name,
+        start_time=args.start_time,
+        end_time=args.end_time,
         quiet=args.quiet,
     )
 
@@ -67,6 +69,8 @@ def _cmd_all(args: argparse.Namespace) -> int:
         in_dir=out_dir,
         out_dir=out_dir,
         output_name=args.name,
+        start_time=args.start_time,
+        end_time=args.end_time,
         quiet=args.quiet,
     )
 
@@ -116,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to write the HTML report (defaults to --in)",
     )
     pr.add_argument("--name", default="cp-report.html", help="Output file name (default: cp-report.html)")
+    pr.add_argument("--start-time", dest="start_time", default=None, help="Filter: include only events with ts >= START (e.g. '2026-01-30 15:00' or ISO-8601)")
+    pr.add_argument("--end-time", dest="end_time", default=None, help="Filter: include only events with ts < END (same format as --start-time)")
     _add_common_flags(pr)
     pr.set_defaults(_fn=_cmd_report)
 
@@ -135,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--base-date", default=None, help="Anchor date for time-only logs: YYYY-MM-DD")
     pa.add_argument("--window-seconds", type=int, default=60, help="Rollup window size in seconds (default 60)")
     pa.add_argument("--name", default="cp-report.html", help="Output file name (default: cp-report.html)")
+    pa.add_argument("--start-time", dest="start_time", default=None, help="Filter: include only events with ts >= START (e.g. '2026-01-30 15:00' or ISO-8601)")
+    pa.add_argument("--end-time", dest="end_time", default=None, help="Filter: include only events with ts < END (same format as --start-time)")
     _add_common_flags(pa)
     pa.set_defaults(_fn=_cmd_all)
 

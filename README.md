@@ -136,13 +136,25 @@ Generate an HTML report from existing CSVs.
 * `--name <FILE>` *(optional, default: `cp-report.html`)*
   Output file name.
 
+* `--start-time <TS>` *(optional)*
+  Only include events in or overlapping this time window start (inclusive). Accepts ISO-like `YYYY-MM-DD HH:MM[:SS[.ffffff]]`, ISO-8601 with `T`, date-only (`YYYY-MM-DD`), or epoch seconds/millis.
+
+* `--end-time <TS>` *(optional)*
+  Only include events before this time (exclusive). Same formats as `--start-time`.
+
+Notes:
+- Point events use containment: `start <= ts < end`.
+- Intervals and rollup windows use overlap with `[start, end)`.
+
 **Example**
 
 ```bash
 hzcp report \
   --in ./out \
   --out ./out \
-  --name cp-report.html
+  --name cp-report.html \
+  --start-time "2026-01-30 15:00" \
+  --end-time   "2026-01-30 16:00"
 ```
 
 ### `hzcp all`

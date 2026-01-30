@@ -7,12 +7,12 @@ from .insights import validate_inputs
 from .render import build_html
 
 
-def run_report(*, in_dir: Path, out_dir: Path, output_name: str = "cp-report.html", quiet: bool = False) -> int:
+def run_report(*, in_dir: Path, out_dir: Path, output_name: str = "cp-report.html", start_time: str | None = None, end_time: str | None = None, quiet: bool = False) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / output_name
 
     paths = validate_inputs(in_dir)
-    html_doc = build_html(str(in_dir), paths)
+    html_doc = build_html(str(in_dir), paths, start_time=start_time, end_time=end_time)
 
     out_path.write_text(html_doc, encoding="utf-8")
 

@@ -74,12 +74,106 @@ def validate_inputs(in_dir: Path) -> Paths:
     return paths
 
 
-def load_all(paths: Paths) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+from datetime import datetime
+
+
+def _parse_csv_ts(ts: str) -> Optional[datetime]:
+    if not ts:
+        return None
+    s = ts.strip().replace("T", " ")
+    try:
+        # supports 'YYYY-MM-DD HH:MM[:SS[.ffffff]]'
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _parse_user_time(s: Optional[str]) -> Optional[datetime]:
+    if not s:
+        return None
+    s2 = s.strip().replace("T", " ")
+    # allow epoch millis/seconds
+    if s2.isdigit():
+        try:
+            n = int(s2)
+            # heuristic: >= 1e12 -> ms
+            if n >= 1_000_000_000_000:
+                return datetime.fromtimestamp(n / 1000.0)
+            return datetime.fromtimestamp(n)
+        except Exception:
+            pass
+    try:
+        return datetime.fromisoformat(s2)
+    except Exception:
+        # try date-only
+        try:
+            return datetime.fromisoformat(s2 + " 00:00:00")
+        except Exception:
+            return None
+
+
+def _overlaps(row_start: Optional[datetime], row_end: Optional[datetime], win_start: Optional[datetime], win_end: Optional[datetime]) -> bool:
+    # Treat None as open-ended
+    if win_start is None and win_end is None:
+        return True
+    # Normalize open ends on row
+    # Overlap of [row_start, row_end) with [win_start, win_end)
+    if win_end is not None and row_start is not None and row_start >= win_end:
+        return False
+    if win_start is not None and row_end is not None and row_end <= win_start:
+        return False
+    # If we cannot disprove, assume overlaps
+    return True
+
+
+def load_all(paths: Paths, start_time: Optional[str] = None, end_time: Optional[str] = None) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     events = read_csv(paths.events)
     intervals = read_csv(paths.intervals)
     rg = read_csv(paths.roll_group)
     rn = read_csv(paths.roll_node)
-    return events, intervals, rg, rn
+
+    st = _parse_user_time(start_time)
+    et = _parse_user_time(end_time)
+
+    if st is None and et is None:
+        return events, intervals, rg, rn
+
+    # Filter events by ts containment [st, et)
+    fevents: list[dict[str, str]] = []
+    for e in events:
+        ts = _parse_csv_ts(e.get("ts", ""))
+        if ts is None:
+            continue
+        if st is not None and ts < st:
+            continue
+        if et is not None and ts >= et:
+            continue
+        fevents.append(e)
+
+    # Filter intervals by overlap with [st, et)
+    fintervals: list[dict[str, str]] = []
+    for it in intervals:
+        s = _parse_csv_ts(it.get("start_ts", ""))
+        en = _parse_csv_ts(it.get("end_ts", ""))
+        if _overlaps(s, en, st, et):
+            fintervals.append(it)
+
+    # Filter rollups group and node by window overlap
+    frg: list[dict[str, str]] = []
+    for r in rg:
+        s = _parse_csv_ts(r.get("window_start", ""))
+        en = _parse_csv_ts(r.get("window_end", ""))
+        if _overlaps(s, en, st, et):
+            frg.append(r)
+
+    frn: list[dict[str, str]] = []
+    for r in rn:
+        s = _parse_csv_ts(r.get("window_start", ""))
+        en = _parse_csv_ts(r.get("window_end", ""))
+        if _overlaps(s, en, st, et):
+            frn.append(r)
+
+    return fevents, fintervals, frg, frn
 
 
 def summarize_event_types(events: List[Dict[str, str]]) -> List[Tuple[str, int]]:

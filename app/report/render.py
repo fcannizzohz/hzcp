@@ -234,8 +234,8 @@ def section_html_block(title, description, bullets, body_html):
     </section>
     """
 
-def build_html(in_dir_str: str, paths: Paths) -> str:
-    events, intervals, rg, rn = load_all(paths)
+def build_html(in_dir_str: str, paths: Paths, *, start_time: str | None = None, end_time: str | None = None) -> str:
+    events, intervals, rg, rn = load_all(paths, start_time=start_time, end_time=end_time)
 
     et = summarize_event_types(events)
     gstats, lstats = leader_stats(intervals)
@@ -328,7 +328,8 @@ def build_html(in_dir_str: str, paths: Paths) -> str:
 <body>
 <header>
   <h1>Hazelcast CP subsystem report</h1>
-  <small>Input CSVs: {esc(in_dir_str)}</small>
+  <small>Input CSVs: {esc(in_dir_str)}</small><br/>
+  {(f"<small>Time window: <b>{esc(start_time)} → {esc(end_time) if end_time else '(open)'}</b> (inclusive start, exclusive end)</small>" if (start_time or end_time) else '')}
 </header>
 <main>
 
