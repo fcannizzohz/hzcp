@@ -60,7 +60,7 @@ pip install -e .
 ### From a git URL (good for servers/CI):
 
 ```bash
-pip install "git+ssh://git@github.com/ORG/REPO.git@main"
+pip install "git+ssh://git@github.com/fcannizzohz/hzcp.git@main"
 ```
 
 (or git+https://...)
