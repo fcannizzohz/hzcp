@@ -1,0 +1,550 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hazelcast CP report</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #0b0f14;
+  --card: #111823;
+  --muted: #9bb0c2;
+  --text: #e7eef6;
+  --border: rgba(255,255,255,0.12);
+  --accent: #7dd3fc;
+  --warn: #fbbf24;
+  --bad: #fb7185;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --muted: #4b5563;
+    --text: #0f172a;
+    --border: rgba(15,23,42,0.14);
+    --accent: #0284c7;
+    --warn: #b45309;
+    --bad: #be123c;
+  }
+}
+html, body { margin:0; padding:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: var(--bg); color: var(--text); }
+header { padding: 22px 24px 6px; }
+h1 { margin:0; font-size: 22px; }
+small { color: var(--muted); }
+main { padding: 12px 24px 40px; display: grid; gap: 16px; max-width: 1200px; }
+section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 14px 12px; }
+h2 { margin: 0 0 10px; font-size: 16px; }
+.note { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.kpis { display:flex; gap: 14px; flex-wrap: wrap; }
+.kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 160px; }
+.kpi .v { font-size: 18px; font-weight: 650; }
+.kpi .l { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.badge { display:inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.table-wrap { max-width: 100%; overflow-x: auto; overflow-y: hidden;}
+table { width: 100%;  border-collapse: collapse; font-size: 12px; table-layout: auto;}
+th, td { padding: 4px 6px; line-height: 1.25;  border-bottom: 1px solid var(--border); border-right: 1px solid rgba(255,255,255,0.06); white-space: nowrap;}
+th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+th:last-child, td:last-child { border-right: none; }
+tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, 0.03); }
+tbody tr:nth-child(even) td { background: transparent; }
+@media (prefers-color-scheme: light) {
+  tbody tr:nth-child(odd) td { background: rgba(15, 23, 42, 0.04); } 
+  th, td { border-right: 1px solid rgba(15,23,42,0.08); }
+}
+tr:hover td { background: rgba(125,211,252,0.08) !important; }
+.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px){ .grid2 { grid-template-columns: 1fr; } }
+.chart { color: var(--accent); }
+</style>
+<script>
+function sortTable(tableId, colIndex) {
+  const table = document.getElementById(tableId);
+  const tbody = table.tBodies[0];
+  const rows = Array.from(tbody.rows);
+  const asc = table.getAttribute("data-sortdir") !== "asc";
+  table.setAttribute("data-sortdir", asc ? "asc" : "desc");
+
+  rows.sort((a, b) => {
+    const ax = a.cells[colIndex].innerText.trim();
+    const bx = b.cells[colIndex].innerText.trim();
+    const an = parseFloat(ax.replace(/[^0-9.\-]/g, ''));
+    const bn = parseFloat(bx.replace(/[^0-9.\-]/g, ''));
+    const aNum = !Number.isNaN(an) && ax.match(/[0-9]/);
+    const bNum = !Number.isNaN(bn) && bx.match(/[0-9]/);
+    let cmp = 0;
+    if (aNum && bNum) cmp = an - bn;
+    else cmp = ax.localeCompare(bx);
+    return asc ? cmp : -cmp;
+  });
+
+  for (const r of rows) tbody.appendChild(r);
+}
+</script>
+</head>
+<body>
+<header>
+  <h1>Hazelcast CP subsystem report</h1>
+  <small>Input CSVs: /Users/fcannizzo/work/simulator-projects/flatex/runs/basic-large-cpmap-test/26-01-2026_15-27-49</small>
+</header>
+<main>
+
+<section>
+  <h2>Overview</h2>
+  <div class="desc">
+    High-level counts to sanity-check that parsing worked and to quickly spot runs with lots of instability.
+    Treat these as “what happened” counters, then drill down with the tables below.
+  </div>
+  <div class="use">
+    <div class="use-title">How to use</div>
+    <ul>
+      <li>If <b>tcp connect timeouts</b> / <b>pre-vote rejections</b> / <b>cluster suspicions</b> spike, focus on network and reachability first.</li>
+      <li>If <b>elections</b> spike without network-ish signals, look for CPU/GC/thread starvation and disk pauses.</li>
+      <li>If <b>CP auto-remove scheduled</b> increases, CP membership is drifting behind cluster membership.</li>
+    </ul>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">1079</div><div class="l">raw events</div></div>
+    <div class="kpi"><div class="v">10</div><div class="l">leader intervals</div></div>
+    <div class="kpi"><div class="v">6</div><div class="l">groups observed</div></div>
+    <div class="kpi"><div class="v">6</div><div class="l">nodes observed</div></div>
+    <div class="kpi"><div class="v">35</div><div class="l">elections (rollups)</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">tcp connect timeouts</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">tcp disconnects</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">pre-vote rejections</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">cluster suspicions</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">CP auto-remove scheduled</div></div>
+  </div>
+</section>
+
+
+<section>
+  <details>
+    <summary>
+      <h2 style="display:inline">Event types: what they mean and why they matter</h2>
+    </summary>
+
+    <div class="desc">
+      Quick glossary of extracted event types. Use this to interpret charts and “from my seat” tables.
+    </div>
+
+    <div class="use">
+      <div class="use-title">How to use</div>
+      <ul>
+        <li>Start with <b>cp_snapshot</b> and <b>role_observed</b> to understand intended CP membership.</li>
+        <li>Use <b>vote_*</b>, <b>pre_vote_*</b>, <b>term_moved</b>, and <b>election_timeout</b> to explain leader churn.</li>
+        <li>Correlate <b>tcp_*</b> with timeouts and rejections to separate network issues from overload.</li>
+      </ul>
+    </div>
+
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>event_type</th>
+          <th>Meaning</th>
+          <th>Why it matters</th>
+          <th>Common interpretation / next checks</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>cp_snapshot</code></td>
+          <td>Observed CP group membership snapshot.</td>
+          <td>Ground truth of who is in the group at that moment.</td>
+          <td>Divergence across seats implies partial visibility or log gaps.</td>
+        </tr>
+
+        <tr>
+          <td><code>role_observed</code></td>
+          <td>Member role seen inside a snapshot (LEADER/FOLLOWER).</td>
+          <td>Used to reconstruct leader history.</td>
+          <td>Rapid role changes indicate churn.</td>
+        </tr>
+
+        <tr>
+          <td><code>leader_set</code></td>
+          <td>Leader UUID set or observed.</td>
+          <td>Signals leadership transitions.</td>
+          <td>High frequency = instability.</td>
+        </tr>
+
+        <tr>
+          <td><code>we_are_leader</code></td>
+          <td>Node claims leadership.</td>
+          <td>Strong leader transition signal.</td>
+          <td>Multiple seats claiming ≈ split or jitter.</td>
+        </tr>
+
+        <tr>
+          <td><code>vote_granted</code></td>
+          <td>Vote granted to candidate.</td>
+          <td>Normal during elections, bad if constant.</td>
+          <td>Correlate with network and lag signals.</td>
+        </tr>
+
+        <tr>
+          <td><code>vote_rejected</code></td>
+          <td>Vote explicitly rejected.</td>
+          <td>Clear election failure evidence.</td>
+          <td>Check rejection reasons and connectivity.</td>
+        </tr>
+
+        <tr>
+          <td><code>pre_vote_rejected</code></td>
+          <td>Pre-vote rejected with reason.</td>
+          <td>Most actionable election diagnostic.</td>
+          <td>Often points to lagging logs or unreachable majority.</td>
+        </tr>
+
+        <tr>
+          <td><code>term_moved</code></td>
+          <td>Raft term advanced.</td>
+          <td>Tracks election churn.</td>
+          <td>Frequent moves without progress = instability.</td>
+        </tr>
+
+        <tr>
+          <td><code>election_timeout</code></td>
+          <td>Election did not complete in time.</td>
+          <td>Direct liveness failure signal.</td>
+          <td>Check GC, CPU, and network.</td>
+        </tr>
+
+        <tr>
+          <td><code>tcp_connect_timeout</code></td>
+          <td>TCP connection attempt timed out.</td>
+          <td>Strong network-path indicator.</td>
+          <td>If paired with vote failures, blame network first.</td>
+        </tr>
+
+        <tr>
+          <td><code>invocation_timeout</code></td>
+          <td>Operation invocation timed out.</td>
+          <td>System not making progress.</td>
+          <td>Correlate with GC pauses and executor saturation.</td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section>
+  <h2>Event types (top)</h2>
+  <div class="desc">
+    A fingerprint of what dominated the run. The chart shows the top event types (counts printed on bars;
+    hover bars for full label). The table below is sortable and shows more rows.
+  </div>
+  <div class="use">
+    <div class="use-title">How to use</div>
+    <ul>
+      <li>If <b>tcp_connect_timeout</b> and <b>pre_vote_rejected</b> dominate, bias toward network jitter / partial connectivity.</li>
+      <li>If <b>invocation_timeout</b> dominates, correlate with leader churn and follower lag windows.</li>
+      <li>If a crucial type is missing entirely, it usually means log wording changed and the extractor needs a regex update.</li>
+    </ul>
+  </div>
+  <div class="chart"><svg width="1280" height="260" viewBox="0 0 1280 260" role="img"><rect x="0" y="0" width="1280" height="260" fill="transparent"/><g><rect x="10" y="14" width="122" height="206" fill="currentColor" opacity="0.30"><title>role_observed: 694</title></rect><text x="71.0" y="12.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">694</text><text x="71.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">role_observed</text></g><g><rect x="136" y="169" width="122" height="51" fill="currentColor" opacity="0.30"><title>cp_snapshot: 175</title></rect><text x="197.0" y="167.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">175</text><text x="197.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cp_snapshot</text></g><g><rect x="262" y="206" width="122" height="14" fill="currentColor" opacity="0.30"><title>tcp_connecting: 49</title></rect><text x="323.0" y="204.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">49</text><text x="323.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">tcp_connecting</text></g><g><rect x="388" y="207" width="122" height="13" fill="currentColor" opacity="0.30"><title>members_container_replaced: 44</title></rect><text x="449.0" y="205.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">44</text><text x="449.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">members_container_…</text></g><g><rect x="514" y="210" width="122" height="10" fill="currentColor" opacity="0.30"><title>leader_set: 35</title></rect><text x="575.0" y="208.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">35</text><text x="575.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">leader_set</text></g><g><rect x="640" y="211" width="122" height="9" fill="currentColor" opacity="0.30"><title>vote_granted: 33</title></rect><text x="701.0" y="209.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">33</text><text x="701.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">vote_granted</text></g><g><rect x="766" y="211" width="122" height="9" fill="currentColor" opacity="0.30"><title>term_moved: 32</title></rect><text x="827.0" y="209.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">32</text><text x="827.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">term_moved</text></g><g><rect x="892" y="218" width="122" height="2" fill="currentColor" opacity="0.30"><title>we_are_leader: 10</title></rect><text x="953.0" y="216.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">10</text><text x="953.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">we_are_leader</text></g><g><rect x="1018" y="219" width="122" height="1" fill="currentColor" opacity="0.30"><title>cp_member_missing_autoremove: 4</title></rect><text x="1079.0" y="217.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">4</text><text x="1079.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cp_member_missing_…</text></g><g><rect x="1144" y="220" width="122" height="0" fill="currentColor" opacity="0.30"><title>member_suspected_cluster: 3</title></rect><text x="1205.0" y="218.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">3</text><text x="1205.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">member_suspected_c…</text></g><text x="10" y="232" font-size="11" fill="currentColor" opacity="0.75">max 694</text></svg></div>
+</section>
+
+
+    <section>
+      <h2>Event types (table)</h2>
+      <div class="desc">Sortable view of event type counts. Same data as the chart, but not capped to top N.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>Sort by count to identify the main failure mode (network-ish vs CP churn vs membership drift).</li><li>Use this to compare runs: top 5 event types should be stable for the same issue class.</li><li>If a type looks suspiciously low, check whether the extractor is missing that log wording in this run.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_102a443d">
+          <thead><tr><th onclick="sortTable('t_102a443d',0)">event_type</th><th onclick="sortTable('t_102a443d',1)">count</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>694</td></tr><tr><td>cp_snapshot</td><td>175</td></tr><tr><td>tcp_connecting</td><td>49</td></tr><tr><td>members_container_replaced</td><td>44</td></tr><tr><td>leader_set</td><td>35</td></tr><tr><td>vote_granted</td><td>33</td></tr><tr><td>term_moved</td><td>32</td></tr><tr><td>we_are_leader</td><td>10</td></tr><tr><td>cp_member_missing_autoremove</td><td>4</td></tr><tr><td>member_suspected_cluster</td><td>3</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+<section>
+  <h2>Most churny groups (top)</h2>
+  <div class="desc">
+    Groups with frequent leader turnover. Bar labels show leader_changes; hover bars for full group names.
+    Use the table to sort by churn_per_hr (best single “instability” signal here).
+  </div>
+  <div class="use">
+    <div class="use-title">How to use</div>
+    <ul>
+      <li>Start with the top 1–3 groups and drill into their “Worst windows”.</li>
+      <li>If <b>METADATA</b> churns, expect broad impact; if only user cpgroup-* churns, impact can be localised.</li>
+      <li>If churn is high but network signals are low, suspect slow node behaviour (CPU/GC/disk) rather than partitions.</li>
+    </ul>
+  </div>
+  <div class="chart"><svg width="1280" height="260" viewBox="0 0 1280 260" role="img"><rect x="0" y="0" width="1280" height="260" fill="transparent"/><g><rect x="10" y="14" width="206" height="206" fill="currentColor" opacity="0.30"><title>cpgroup-4: 2</title></rect><text x="113.0" y="12.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">2</text><text x="113.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cpgroup-4</text></g><g><rect x="220" y="117" width="206" height="103" fill="currentColor" opacity="0.30"><title>cpgroup-3: 1</title></rect><text x="323.0" y="115.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">1</text><text x="323.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cpgroup-3</text></g><g><rect x="430" y="117" width="206" height="103" fill="currentColor" opacity="0.30"><title>METADATA: 1</title></rect><text x="533.0" y="115.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">1</text><text x="533.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">METADATA</text></g><g><rect x="640" y="220" width="206" height="0" fill="currentColor" opacity="0.30"><title>cpgroup-0: 0</title></rect><text x="743.0" y="218.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">0</text><text x="743.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cpgroup-0</text></g><g><rect x="850" y="220" width="206" height="0" fill="currentColor" opacity="0.30"><title>cpgroup-1: 0</title></rect><text x="953.0" y="218.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">0</text><text x="953.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cpgroup-1</text></g><g><rect x="1060" y="220" width="206" height="0" fill="currentColor" opacity="0.30"><title>cpgroup-2: 0</title></rect><text x="1163.0" y="218.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.9">0</text><text x="1163.0" y="250.0" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.75">cpgroup-2</text></g><text x="10" y="232" font-size="11" fill="currentColor" opacity="0.75">max 2</text></svg></div>
+</section>
+
+
+    <section>
+      <h2>Most churny groups (table)</h2>
+      <div class="desc">Sortable stability statistics per group_key derived from leader intervals.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>Sort by churn_per_hr to find groups that can’t hold leadership.</li><li>Compare distinct_leaders vs leader_changes to spot whether churn is wide (many nodes) or narrow (few nodes flipping).</li><li>Cross-check group_key in “Per-group correlations” to see if churn lines up with tcp/pre-vote/suspicions.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_e902bdde">
+          <thead><tr><th onclick="sortTable('t_e902bdde',0)">group_key</th><th onclick="sortTable('t_e902bdde',1)">leader_intervals_started</th><th onclick="sortTable('t_e902bdde',2)">distinct_leaders</th><th onclick="sortTable('t_e902bdde',3)">total_min</th><th onclick="sortTable('t_e902bdde',4)">mean_interval_s</th><th onclick="sortTable('t_e902bdde',5)">p95_interval_s</th><th onclick="sortTable('t_e902bdde',6)">churn_per_hr</th></tr></thead>
+          <tbody>
+            <tr><td>cpgroup-4</td><td>2</td><td>3</td><td>60.3</td><td>1206.4</td><td>3556.72</td><td>2.984</td></tr><tr><td>cpgroup-3</td><td>1</td><td>2</td><td>60.3</td><td>1809.58</td><td>3617.21</td><td>1.989</td></tr><tr><td>METADATA</td><td>1</td><td>2</td><td>60.4</td><td>1811.32</td><td>3617.78</td><td>1.988</td></tr><tr><td>cpgroup-0</td><td>0</td><td>1</td><td>60.3</td><td>3619.24</td><td>3619.24</td><td>0.995</td></tr><tr><td>cpgroup-1</td><td>0</td><td>1</td><td>60.3</td><td>3619.16</td><td>3619.16</td><td>0.995</td></tr><tr><td>cpgroup-2</td><td>0</td><td>1</td><td>60.3</td><td>3618.8</td><td>3618.8</td><td>0.995</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Leader share (all groups combined)</h2>
+      <div class="desc">Total leader time per leader_uuid summed across all CP groups. This is about skew and concentration, not wall-clock leadership.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>If one UUID dominates, check for overload/hotspot or other nodes being unreliable.</li><li>If leadership is evenly spread but churn is high, suspect group-level partitions rather than a single bad node.</li><li>Use this to pick candidates for deeper per-node inspection (CPU/GC/network).</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_e20fae11">
+          <thead><tr><th onclick="sortTable('t_e20fae11',0)">leader_uuid</th><th onclick="sortTable('t_e20fae11',1)">total_min</th><th onclick="sortTable('t_e20fae11',2)">share</th><th onclick="sortTable('t_e20fae11',3)">groups</th><th onclick="sortTable('t_e20fae11',4)">intervals</th></tr></thead>
+          <tbody>
+            <tr><td>a1de37fb-8b5a-4bca-84ad-ea3eac442300</td><td>121.7</td><td>33.6%</td><td>4</td><td>4</td></tr><tr><td>e9e2c324-1346-4c6b-981e-6d716974d62f</td><td>119.6</td><td>33.0%</td><td>2</td><td>2</td></tr><tr><td>a4029840-61ff-420e-a782-a586e0c68d8c</td><td>60.4</td><td>16.7%</td><td>3</td><td>3</td></tr><tr><td>bf3e5d70-ff06-42e5-8793-3b32152e9f54</td><td>60.3</td><td>16.7%</td><td>1</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Worst windows by network_instability_index</h2>
+      <div class="desc">Top time windows with the highest composite network-instability score (timeouts, disconnects, pre-vote rejections, suspicions, etc.).</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>Start here when users report &#x27;it was bad around X&#x27;. These windows are the shortest path to root cause.</li><li>If net_idx is high and elections/leader_changes are also high, it’s usually network-driven CP churn.</li><li>If net_idx is high but elections are low, you may have network issues hurting clients without forcing elections.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_57dd9ef3">
+          <thead><tr><th onclick="sortTable('t_57dd9ef3',0)">window_start</th><th onclick="sortTable('t_57dd9ef3',1)">window_end</th><th onclick="sortTable('t_57dd9ef3',2)">group_key</th><th onclick="sortTable('t_57dd9ef3',3)">net_idx</th><th onclick="sortTable('t_57dd9ef3',4)">tcp_timeouts</th><th onclick="sortTable('t_57dd9ef3',5)">tcp_disconnects</th><th onclick="sortTable('t_57dd9ef3',6)">pre_vote_rej</th><th onclick="sortTable('t_57dd9ef3',7)">suspicions</th><th onclick="sortTable('t_57dd9ef3',8)">elections</th><th onclick="sortTable('t_57dd9ef3',9)">leader_intervals_started</th><th onclick="sortTable('t_57dd9ef3',10)">cp_autoremove</th></tr></thead>
+          <tbody>
+            <tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>METADATA</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>cpgroup-0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>cpgroup-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>cpgroup-2</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>cpgroup-3</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>cpgroup-4</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>cpgroup-4</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>METADATA</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>3</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>cpgroup-0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>cpgroup-1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>cpgroup-2</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>cpgroup-3</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td></tr><tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>cpgroup-4</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>3</td><td>1</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Per-group correlations (Pearson, windowed) — event totals</h2>
+      <div class="desc">Window totals per group. Use this to sanity-check volume before interpreting correlations.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>If windows &lt; 3, correlations will be blank/undefined.</li><li>If totals are near-zero for everything, you’re correlating noise.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_a96795ad">
+          <thead><tr><th onclick="sortTable('t_a96795ad',0)">group_key</th><th onclick="sortTable('t_a96795ad',1)">windows</th><th onclick="sortTable('t_a96795ad',2)">sum_elections</th><th onclick="sortTable('t_a96795ad',3)">sum_tcp_timeouts</th><th onclick="sortTable('t_a96795ad',4)">sum_prevote_rej</th><th onclick="sortTable('t_a96795ad',5)">sum_suspicions</th></tr></thead>
+          <tbody>
+            <tr><td>cpgroup-4</td><td>3</td><td>11</td><td>0</td><td>0</td><td>0</td></tr><tr><td>METADATA</td><td>2</td><td>7</td><td>0</td><td>0</td><td>0</td></tr><tr><td>cpgroup-3</td><td>2</td><td>5</td><td>0</td><td>0</td><td>0</td></tr><tr><td>cpgroup-0</td><td>2</td><td>4</td><td>0</td><td>0</td><td>0</td></tr><tr><td>cpgroup-1</td><td>2</td><td>4</td><td>0</td><td>0</td><td>0</td></tr><tr><td>cpgroup-2</td><td>2</td><td>4</td><td>0</td><td>0</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Per-group correlations (Pearson, windowed) — correlation coefficients</h2>
+      <div class="desc">Pearson correlation coefficients per group. Some rows may be blank: Pearson needs at least 3 windows and non-constant series.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>Use corr(*) only when correlation_status is &#x27;ok&#x27;.</li><li>If &#x27;insufficient windows (&lt;3)&#x27;, rerun with a smaller rollup window (or a longer run).</li><li>If &#x27;constant series&#x27;, that metric didn’t vary in those windows, so Pearson is undefined.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_f5b711ec">
+          <thead><tr><th onclick="sortTable('t_f5b711ec',0)">group_key</th><th onclick="sortTable('t_f5b711ec',1)">corr(elections,tcp_timeouts)</th><th onclick="sortTable('t_f5b711ec',2)">corr(elections,pre_vote_rej)</th><th onclick="sortTable('t_f5b711ec',3)">corr(leader_changes,suspicions)</th><th onclick="sortTable('t_f5b711ec',4)">corr(elections,append_fail)</th><th onclick="sortTable('t_f5b711ec',5)">corr(elections,invoc_timeouts)</th><th onclick="sortTable('t_f5b711ec',6)">correlation_status</th></tr></thead>
+          <tbody>
+            <tr><td>cpgroup-4</td><td></td><td></td><td></td><td></td><td></td><td>constant series</td></tr><tr><td>METADATA</td><td></td><td></td><td></td><td></td><td></td><td>insufficient windows (&lt;3)</td></tr><tr><td>cpgroup-3</td><td></td><td></td><td></td><td></td><td></td><td>insufficient windows (&lt;3)</td></tr><tr><td>cpgroup-0</td><td></td><td></td><td></td><td></td><td></td><td>insufficient windows (&lt;3)</td></tr><tr><td>cpgroup-1</td><td></td><td></td><td></td><td></td><td></td><td>insufficient windows (&lt;3)</td></tr><tr><td>cpgroup-2</td><td></td><td></td><td></td><td></td><td></td><td>insufficient windows (&lt;3)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Top risky nodes (windowed)</h2>
+      <div class="desc">Nodes ranked by a simple additive risk score (rejections, behind events, invocation timeouts, tcp timeouts, being suspected). It’s a shortlist, not a verdict.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>Pick the top nodes and see whether they appear across many windows (chronic) or just a spike (incident).</li><li>High was_suspected + tcp_timeouts usually points to connectivity/AZ routing/host issues.</li><li>High behind + invocation_timeouts with low tcp symptoms usually points to CPU/GC or disk IO (node is &#x27;slow&#x27;, not &#x27;disconnected&#x27;).</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_dfc733c5">
+          <thead><tr><th onclick="sortTable('t_dfc733c5',0)">window_start</th><th onclick="sortTable('t_dfc733c5',1)">window_end</th><th onclick="sortTable('t_dfc733c5',2)">node_uuid</th><th onclick="sortTable('t_dfc733c5',3)">node_addr</th><th onclick="sortTable('t_dfc733c5',4)">risk</th><th onclick="sortTable('t_dfc733c5',5)">was_suspected</th><th onclick="sortTable('t_dfc733c5',6)">tcp_timeouts</th><th onclick="sortTable('t_dfc733c5',7)">tcp_disconnects</th><th onclick="sortTable('t_dfc733c5',8)">votes_rej</th><th onclick="sortTable('t_dfc733c5',9)">pre_vote_rej</th><th onclick="sortTable('t_dfc733c5',10)">behind</th><th onclick="sortTable('t_dfc733c5',11)">invoc_timeouts</th><th onclick="sortTable('t_dfc733c5',12)">leadership_min</th></tr></thead>
+          <tbody>
+            <tr><td>1970-01-01 16:28:00</td><td>1970-01-01 16:29:00</td><td>fba139f5-31c2-4198-9951-6ebc1c3a8bac</td><td>172.31.88.36:5701</td><td>3</td><td>3</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td></td><td>172.31.88.62:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.0</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>a1de37fb-8b5a-4bca-84ad-ea3eac442300</td><td>172.31.88.62:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.5</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>a4029840-61ff-420e-a782-a586e0c68d8c</td><td>172.31.88.126:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.5</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>bf3e5d70-ff06-42e5-8793-3b32152e9f54</td><td>172.31.88.38:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.5</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>e9e2c324-1346-4c6b-981e-6d716974d62f</td><td>172.31.88.132:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.56</td></tr><tr><td>1970-01-01 15:28:00</td><td>1970-01-01 15:29:00</td><td>fba139f5-31c2-4198-9951-6ebc1c3a8bac</td><td>172.31.88.36:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.0</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>a1de37fb-8b5a-4bca-84ad-ea3eac442300</td><td>172.31.88.62:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2.45</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>a4029840-61ff-420e-a782-a586e0c68d8c</td><td>172.31.88.126:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>bf3e5d70-ff06-42e5-8793-3b32152e9f54</td><td>172.31.88.38:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>e9e2c324-1346-4c6b-981e-6d716974d62f</td><td>172.31.88.132:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.55</td></tr><tr><td>1970-01-01 15:29:00</td><td>1970-01-01 15:30:00</td><td>fba139f5-31c2-4198-9951-6ebc1c3a8bac</td><td>172.31.88.36:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0.0</td></tr><tr><td>1970-01-01 15:30:00</td><td>1970-01-01 15:31:00</td><td>a1de37fb-8b5a-4bca-84ad-ea3eac442300</td><td>172.31.88.62:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2.0</td></tr><tr><td>1970-01-01 15:30:00</td><td>1970-01-01 15:31:00</td><td>a4029840-61ff-420e-a782-a586e0c68d8c</td><td>172.31.88.126:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:30:00</td><td>1970-01-01 15:31:00</td><td>bf3e5d70-ff06-42e5-8793-3b32152e9f54</td><td>172.31.88.38:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:30:00</td><td>1970-01-01 15:31:00</td><td>e9e2c324-1346-4c6b-981e-6d716974d62f</td><td>172.31.88.132:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2.0</td></tr><tr><td>1970-01-01 15:31:00</td><td>1970-01-01 15:32:00</td><td>a1de37fb-8b5a-4bca-84ad-ea3eac442300</td><td>172.31.88.62:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2.0</td></tr><tr><td>1970-01-01 15:31:00</td><td>1970-01-01 15:32:00</td><td>a4029840-61ff-420e-a782-a586e0c68d8c</td><td>172.31.88.126:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:31:00</td><td>1970-01-01 15:32:00</td><td>bf3e5d70-ff06-42e5-8793-3b32152e9f54</td><td>172.31.88.38:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1.0</td></tr><tr><td>1970-01-01 15:31:00</td><td>1970-01-01 15:32:00</td><td>e9e2c324-1346-4c6b-981e-6d716974d62f</td><td>172.31.88.132:5701</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>Nodes inventory (observer seats)</h2>
+      <div class="desc">One row per worker/member log: label + private/public IP + CP priority + coverage window. This is the basis for any &#x27;from my seat&#x27; analysis.</div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul><li>If a seat has blank private/public/priority, your extractor did not see the simulator banner lines (log format change or truncation).</li><li>Compare first_ts/last_ts to ensure all seats cover the same run window (missing tail/head can skew counts).</li><li>If cp_priority differs across seats, leadership skew may be expected rather than a fault.</li></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_508a24f4">
+          <thead><tr><th onclick="sortTable('t_508a24f4',0)">observer_label</th><th onclick="sortTable('t_508a24f4',1)">private_ip</th><th onclick="sortTable('t_508a24f4',2)">public_ip</th><th onclick="sortTable('t_508a24f4',3)">cp_priority</th><th onclick="sortTable('t_508a24f4',4)">first_ts</th><th onclick="sortTable('t_508a24f4',5)">last_ts</th><th onclick="sortTable('t_508a24f4',6)">events</th><th onclick="sortTable('t_508a24f4',7)">files</th></tr></thead>
+          <tbody>
+            <tr><td>A1_W1</td><td>172.31.88.126</td><td>18.132.45.35</td><td>100</td><td>1970-01-01 15:28:24.305000</td><td>1970-01-01 16:28:49.080000</td><td>277</td><td>1</td></tr><tr><td>A2_W1</td><td>172.31.88.62</td><td>18.133.225.224</td><td>100</td><td>1970-01-01 15:28:24.294000</td><td>1970-01-01 16:28:47.219000</td><td>256</td><td>1</td></tr><tr><td>A3_W1</td><td>172.31.88.132</td><td>35.178.14.182</td><td>100</td><td>1970-01-01 15:28:24.282000</td><td>1970-01-01 16:28:48.607000</td><td>156</td><td>1</td></tr><tr><td>A4_W1</td><td>172.31.88.38</td><td>35.179.129.9</td><td>100</td><td>1970-01-01 15:28:24.249000</td><td>1970-01-01 16:28:46.907000</td><td>225</td><td>1</td></tr><tr><td>A5_W1</td><td>172.31.88.36</td><td>52.56.95.214</td><td>1</td><td>1970-01-01 15:28:24.277000</td><td>1970-01-01 16:28:45.910000</td><td>165</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+
+    <section>
+      <h2>From my seat: event counts by member</h2>
+      <p>Each table represents what a single member observed. Rows are event_type, columns are group_key, values are counts.</p>
+      <ul>
+        <li>Compare the same event_type across seats to spot asymmetric visibility.</li><li>Look at TOTAL to see what dominated each member’s view.</li><li>'(none)' group means the log line had no CP group attribution.</li>
+      </ul>
+      
+    <section>
+      <h2>Seat: A1_W1</h2>
+      <div class="desc"></div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_9ee394db">
+          <thead><tr><th onclick="sortTable('t_9ee394db',0)">event_type</th><th onclick="sortTable('t_9ee394db',1)">(none)</th><th onclick="sortTable('t_9ee394db',2)">METADATA</th><th onclick="sortTable('t_9ee394db',3)">cpgroup-0</th><th onclick="sortTable('t_9ee394db',4)">cpgroup-1</th><th onclick="sortTable('t_9ee394db',5)">cpgroup-2</th><th onclick="sortTable('t_9ee394db',6)">cpgroup-3</th><th onclick="sortTable('t_9ee394db',7)">cpgroup-4</th><th onclick="sortTable('t_9ee394db',8)">TOTAL</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>0</td><td>39</td><td>23</td><td>23</td><td>19</td><td>26</td><td>44</td><td>174</td></tr><tr><td>cp_snapshot</td><td>0</td><td>11</td><td>6</td><td>7</td><td>5</td><td>9</td><td>11</td><td>49</td></tr><tr><td>tcp_connecting</td><td>20</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>20</td></tr><tr><td>members_container_replaced</td><td>9</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>leader_set</td><td>0</td><td>2</td><td>0</td><td>1</td><td>1</td><td>1</td><td>2</td><td>7</td></tr><tr><td>term_moved</td><td>0</td><td>2</td><td>0</td><td>1</td><td>1</td><td>1</td><td>2</td><td>7</td></tr><tr><td>vote_granted</td><td>0</td><td>2</td><td>0</td><td>1</td><td>1</td><td>1</td><td>2</td><td>7</td></tr><tr><td>we_are_leader</td><td>0</td><td>0</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>3</td></tr><tr><td>cp_member_missing_autoremove</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+    <section>
+      <h2>Seat: A2_W1</h2>
+      <div class="desc"></div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_82649a31">
+          <thead><tr><th onclick="sortTable('t_82649a31',0)">event_type</th><th onclick="sortTable('t_82649a31',1)">(none)</th><th onclick="sortTable('t_82649a31',2)">METADATA</th><th onclick="sortTable('t_82649a31',3)">cpgroup-0</th><th onclick="sortTable('t_82649a31',4)">cpgroup-1</th><th onclick="sortTable('t_82649a31',5)">cpgroup-2</th><th onclick="sortTable('t_82649a31',6)">cpgroup-3</th><th onclick="sortTable('t_82649a31',7)">cpgroup-4</th><th onclick="sortTable('t_82649a31',8)">TOTAL</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>0</td><td>34</td><td>19</td><td>23</td><td>23</td><td>23</td><td>49</td><td>171</td></tr><tr><td>cp_snapshot</td><td>0</td><td>9</td><td>5</td><td>6</td><td>6</td><td>7</td><td>12</td><td>45</td></tr><tr><td>members_container_replaced</td><td>9</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>tcp_connecting</td><td>9</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>leader_set</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>2</td><td>6</td></tr><tr><td>vote_granted</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>2</td><td>6</td></tr><tr><td>term_moved</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>1</td><td>5</td></tr><tr><td>we_are_leader</td><td>0</td><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>4</td></tr><tr><td>member_suspected_cluster</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+    <section>
+      <h2>Seat: A3_W1</h2>
+      <div class="desc"></div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_19f7f65e">
+          <thead><tr><th onclick="sortTable('t_19f7f65e',0)">event_type</th><th onclick="sortTable('t_19f7f65e',1)">(none)</th><th onclick="sortTable('t_19f7f65e',2)">METADATA</th><th onclick="sortTable('t_19f7f65e',3)">cpgroup-0</th><th onclick="sortTable('t_19f7f65e',4)">cpgroup-1</th><th onclick="sortTable('t_19f7f65e',5)">cpgroup-2</th><th onclick="sortTable('t_19f7f65e',6)">cpgroup-3</th><th onclick="sortTable('t_19f7f65e',7)">cpgroup-4</th><th onclick="sortTable('t_19f7f65e',8)">TOTAL</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>0</td><td>18</td><td>10</td><td>14</td><td>10</td><td>14</td><td>23</td><td>89</td></tr><tr><td>cp_snapshot</td><td>0</td><td>4</td><td>2</td><td>4</td><td>2</td><td>4</td><td>5</td><td>21</td></tr><tr><td>tcp_connecting</td><td>16</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>16</td></tr><tr><td>members_container_replaced</td><td>9</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>leader_set</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>5</td></tr><tr><td>term_moved</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>5</td></tr><tr><td>vote_granted</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>5</td></tr><tr><td>cp_member_missing_autoremove</td><td>3</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>3</td></tr><tr><td>we_are_leader</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>2</td></tr><tr><td>member_suspected_cluster</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+    <section>
+      <h2>Seat: A4_W1</h2>
+      <div class="desc"></div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_4c71b76f">
+          <thead><tr><th onclick="sortTable('t_4c71b76f',0)">event_type</th><th onclick="sortTable('t_4c71b76f',1)">(none)</th><th onclick="sortTable('t_4c71b76f',2)">METADATA</th><th onclick="sortTable('t_4c71b76f',3)">cpgroup-0</th><th onclick="sortTable('t_4c71b76f',4)">cpgroup-1</th><th onclick="sortTable('t_4c71b76f',5)">cpgroup-2</th><th onclick="sortTable('t_4c71b76f',6)">cpgroup-3</th><th onclick="sortTable('t_4c71b76f',7)">cpgroup-4</th><th onclick="sortTable('t_4c71b76f',8)">TOTAL</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>0</td><td>33</td><td>17</td><td>17</td><td>17</td><td>23</td><td>43</td><td>150</td></tr><tr><td>cp_snapshot</td><td>0</td><td>8</td><td>4</td><td>4</td><td>4</td><td>6</td><td>10</td><td>36</td></tr><tr><td>members_container_replaced</td><td>9</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>leader_set</td><td>0</td><td>2</td><td>1</td><td>1</td><td>1</td><td>0</td><td>3</td><td>8</td></tr><tr><td>term_moved</td><td>0</td><td>2</td><td>1</td><td>1</td><td>1</td><td>0</td><td>3</td><td>8</td></tr><tr><td>vote_granted</td><td>0</td><td>2</td><td>1</td><td>1</td><td>1</td><td>0</td><td>3</td><td>8</td></tr><tr><td>tcp_connecting</td><td>4</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>4</td></tr><tr><td>member_suspected_cluster</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td></tr><tr><td>we_are_leader</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+
+    <section>
+      <h2>Seat: A5_W1</h2>
+      <div class="desc"></div>
+      <div class="use">
+        <div class="use-title">How to use</div>
+        <ul></ul>
+      </div>
+      <div class="note">Click a column header to sort. Copy rows into a spreadsheet for deeper analysis.</div>
+      <div class="table-wrap">
+        <table id="t_ac0cdc04">
+          <thead><tr><th onclick="sortTable('t_ac0cdc04',0)">event_type</th><th onclick="sortTable('t_ac0cdc04',1)">(none)</th><th onclick="sortTable('t_ac0cdc04',2)">METADATA</th><th onclick="sortTable('t_ac0cdc04',3)">cpgroup-0</th><th onclick="sortTable('t_ac0cdc04',4)">cpgroup-1</th><th onclick="sortTable('t_ac0cdc04',5)">cpgroup-2</th><th onclick="sortTable('t_ac0cdc04',6)">cpgroup-3</th><th onclick="sortTable('t_ac0cdc04',7)">cpgroup-4</th><th onclick="sortTable('t_ac0cdc04',8)">TOTAL</th></tr></thead>
+          <tbody>
+            <tr><td>role_observed</td><td>0</td><td>22</td><td>14</td><td>14</td><td>14</td><td>14</td><td>32</td><td>110</td></tr><tr><td>cp_snapshot</td><td>0</td><td>5</td><td>3</td><td>3</td><td>3</td><td>3</td><td>7</td><td>24</td></tr><tr><td>leader_set</td><td>0</td><td>2</td><td>1</td><td>1</td><td>1</td><td>1</td><td>3</td><td>9</td></tr><tr><td>members_container_replaced</td><td>8</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>8</td></tr><tr><td>term_moved</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>2</td><td>7</td></tr><tr><td>vote_granted</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>2</td><td>7</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    
+    </section>
+    
+
+<section>
+  <h2>Next improvements</h2>
+  <div class="desc">
+    A few upgrades that increase accuracy without turning this into a full observability platform.
+  </div>
+  <div class="use">
+    <div class="use-title">How to use</div>
+    <ul>
+      <li><b>Vote RTT</b>: if logs contain paired request/response lines, compute p50/p95 latency per node pair.</li>
+      <li><b>Peer attribution</b>: if Append/behind/timeout lines name the remote peer, parse it to build a node→node “bad link matrix”.</li>
+      <li><b>Reason parsing</b>: vote rejection reasons are often the fastest way to prove network vs slow-node behaviour.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+</body>
+</html>
