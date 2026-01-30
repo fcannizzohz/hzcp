@@ -1,4 +1,3 @@
-````md
 # hzcp
 
 Hazelcast CP log extractor and HTML report generator.
